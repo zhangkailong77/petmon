@@ -1,0 +1,5 @@
+{
+  "name": "PetPulse",
+  "description": "A comprehensive pet management dashboard to track health behaviors, expenses, and receive AI-powered veterinary insights.",
+  "requestFramePermissions": []
+}
