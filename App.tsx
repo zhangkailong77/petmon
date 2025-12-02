@@ -5,6 +5,7 @@ import * as Icons from './components/Icons';
 import { Pet, LogEntry, ExpenseEntry, LogType, Species, AnalysisResult, Photo, ChatMessage, MemoEntry } from './types';
 import * as Storage from './services/storage';
 import * as GeminiService from './services/geminiService';
+import * as AuthService from './services/authService';
 import { translations } from './translations';
 
 // --- Language Context ---
@@ -85,6 +86,176 @@ const getStartOfWeek = (date: Date) => {
 };
 
 // --- Helper Components ---
+
+// --- Auth Components (New) ---
+
+const AuthInput: React.FC<React.InputHTMLAttributes<HTMLInputElement> & { icon: React.ReactNode }> = ({ icon, className = "", ...props }) => (
+  <div className="relative group">
+    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-teal-600 transition-colors">
+      {icon}
+    </div>
+    <input 
+      className={`w-full bg-slate-50/50 border border-slate-200 text-slate-800 text-sm rounded-2xl py-4 pl-12 pr-4 outline-none focus:bg-white focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all placeholder:text-slate-400 ${className}`}
+      {...props}
+    />
+  </div>
+);
+
+const AuthScreen: React.FC<{ onLoginSuccess: (user: any) => void }> = ({ onLoginSuccess }) => {
+  const { t } = useLanguage();
+  const [isLogin, setIsLogin] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  // 倒计时逻辑
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
+
+  const handleSendCode = async () => {
+    if (!email) return alert(t('email_required') || 'Please enter email');
+    setIsLoading(true);
+    try {
+      await AuthService.sendVerificationCode(email);
+      setCodeSent(true);
+      setCountdown(60);
+      alert('Verification code sent! (Check backend console)');
+    } catch (error) {
+      alert('Failed to send code');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      let response;
+      if (isLogin) {
+        response = await AuthService.login(email, password);
+      } else {
+        response = await AuthService.register(email, password, code);
+      }
+      localStorage.setItem('token', response.access_token);
+      localStorage.setItem('user', JSON.stringify(response.user));
+      onLoginSuccess(response.user);
+    } catch (error: any) {
+      alert(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 bg-[#f8fafc] relative overflow-hidden">
+        {/* 背景装饰球 */}
+        <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-teal-200/30 rounded-full blur-3xl animate-pulse-soft"></div>
+        <div className="absolute bottom-[-10%] left-[-10%] w-96 h-96 bg-blue-200/30 rounded-full blur-3xl animate-pulse-soft" style={{animationDelay: '1s'}}></div>
+
+        <div className="w-full max-w-sm relative z-10">
+            <div className="bg-white/70 backdrop-blur-xl border border-white/50 shadow-2xl shadow-slate-200/50 rounded-[40px] p-8 animate-slide-up">
+                
+                <div className="text-center mb-10">
+                    <div className="inline-flex p-4 bg-gradient-to-tr from-teal-500 to-emerald-500 rounded-3xl shadow-lg shadow-teal-500/30 mb-6 text-white">
+                        <Icons.Dog className="w-8 h-8" />
+                    </div>
+                    <h1 className="text-2xl font-bold text-slate-800 tracking-tight mb-2">
+                        {isLogin ? t('welcome_back') || 'Welcome Back' : t('create_account') || 'Create Account'}
+                    </h1>
+                    <p className="text-sm text-slate-500 font-medium">
+                        {isLogin ? t('login_hint') || 'Enter your details to continue' : t('register_hint') || 'Join our pet community today'}
+                    </p>
+                </div>
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <AuthInput 
+                        type="email" 
+                        placeholder="Email Address" 
+                        icon={<Icons.Mail className="w-5 h-5"/>}
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        required
+                    />
+                    
+                    {!isLogin && (
+                        <div className="flex gap-2">
+                            <AuthInput 
+                                type="text" 
+                                placeholder="Code" 
+                                icon={<Icons.ShieldCheck className="w-5 h-5"/>}
+                                className="tracking-widest font-mono text-center"
+                                value={code}
+                                onChange={e => setCode(e.target.value)}
+                                maxLength={6}
+                                required
+                            />
+                            <button 
+                                type="button"
+                                onClick={handleSendCode}
+                                disabled={isLoading || countdown > 0 || !email}
+                                className="px-4 rounded-2xl bg-slate-100 text-teal-600 font-bold text-xs hover:bg-teal-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap border border-slate-200"
+                            >
+                                {countdown > 0 ? `${countdown}s` : (codeSent ? 'Resend' : 'Get Code')}
+                            </button>
+                        </div>
+                    )}
+
+                    <AuthInput 
+                        type="password" 
+                        placeholder="Password" 
+                        icon={<Icons.Lock className="w-5 h-5"/>}
+                        value={password}
+                        onChange={e => setPassword(e.target.value)}
+                        required
+                    />
+
+                    <button 
+                        type="submit" 
+                        disabled={isLoading}
+                        className="w-full py-4 mt-4 bg-slate-900 text-white rounded-2xl font-bold shadow-xl shadow-slate-900/20 hover:bg-slate-800 active:scale-[0.98] transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        {isLoading ? (
+                            <Icons.Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                            <>
+                                {isLogin ? (t('login') || 'Sign In') : (t('register') || 'Sign Up')}
+                                <Icons.ArrowRight className="w-4 h-4" />
+                            </>
+                        )}
+                    </button>
+                </form>
+
+                <div className="mt-8 text-center">
+                    <button 
+                        onClick={() => { setIsLogin(!isLogin); setCodeSent(false); }}
+                        className="text-sm text-slate-500 hover:text-slate-800 font-medium transition-colors"
+                    >
+                        {isLogin ? (
+                            <>New to PetPulse? <span className="text-teal-600 font-bold">Create account</span></>
+                        ) : (
+                            <>Already have an account? <span className="text-teal-600 font-bold">Sign In</span></>
+                        )}
+                    </button>
+                </div>
+
+            </div>
+            
+            {/* 底部版权或其他信息 */}
+            <p className="text-center text-xs text-slate-400 mt-8 font-medium">
+                &copy; 2024 PetPulse. Designed with Love.
+            </p>
+        </div>
+    </div>
+  );
+};
 
 const Card: React.FC<{ children: React.ReactNode; className?: string; onClick?: () => void }> = ({ children, className = "", onClick }) => (
   <div 
@@ -1771,10 +1942,20 @@ const Dashboard: React.FC<{
 
 // --- Main App Controller ---
 
-const PetList: React.FC<{ pets: Pet[]; onSelect: (pet: Pet) => void; onAdd: () => void }> = ({ pets, onSelect, onAdd }) => {
+// --- 开始复制 ---
+const PetList: React.FC<{ 
+  pets: Pet[]; 
+  onSelect: (pet: Pet) => void; 
+  onAdd: () => void;
+  onLogout: () => void;
+}> = ({ pets, onSelect, onAdd, onLogout }) => {
     const { t, language } = useLanguage();
+    
     return (
-    <div className="p-6 min-h-screen flex flex-col bg-[#f8fafc]">
+    // 1. 外层容器：设置 relative 和底部内边距 pb-32，防止内容被底部栏遮挡
+    <div className="p-6 min-h-screen flex flex-col bg-[#f8fafc] relative pb-32">
+        
+        {/* 2. 头部：只保留语言切换，移除原本的退出按钮 */}
         <header className="mt-6 mb-10 px-2 flex justify-between items-start">
             <div>
                 <h1 className="text-4xl font-bold text-slate-900 tracking-tight mb-2">{t('app_name')}</h1>
@@ -1783,34 +1964,52 @@ const PetList: React.FC<{ pets: Pet[]; onSelect: (pet: Pet) => void; onAdd: () =
             <LanguageToggle />
         </header>
         
+        {/* 3. 宠物列表区域 */}
         <div className="grid gap-5">
-        {pets.map((pet, idx) => (
-            <div key={pet.id} onClick={() => onSelect(pet)} className="group bg-white p-5 rounded-3xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-100 flex items-center gap-5 cursor-pointer hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all duration-300" style={{animationDelay: `${idx * 100}ms`}}>
-            <div className="w-20 h-20 rounded-2xl bg-slate-100 overflow-hidden flex-shrink-0 shadow-inner relative">
-                {pet.photoUrl ? <img src={pet.photoUrl} alt={pet.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" /> : <Icons.Dog className="m-6 text-slate-300"/>}
-            </div>
-            <div className="flex-1">
-                <h3 className="font-bold text-xl text-slate-800 mb-1">{pet.name}</h3>
-                <p className="text-slate-500 text-sm font-medium">{t(pet.species)} · {formatPetAge(pet, language)}</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-teal-50 group-hover:text-teal-600 transition-colors">
-                <Icons.ChevronLeft className="rotate-180 w-5 h-5" />
-            </div>
-            </div>
-        ))}
+            {pets.map((pet, idx) => (
+                <div key={pet.id} onClick={() => onSelect(pet)} className="group bg-white p-5 rounded-3xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-100 flex items-center gap-5 cursor-pointer hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:-translate-y-1 transition-all duration-300" style={{animationDelay: `${idx * 100}ms`}}>
+                <div className="w-20 h-20 rounded-2xl bg-slate-100 overflow-hidden flex-shrink-0 shadow-inner relative">
+                    {pet.photoUrl ? <img src={pet.photoUrl} alt={pet.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" /> : <Icons.Dog className="m-6 text-slate-300"/>}
+                </div>
+                <div className="flex-1">
+                    <h3 className="font-bold text-xl text-slate-800 mb-1">{pet.name}</h3>
+                    <p className="text-slate-500 text-sm font-medium">{t(pet.species)} · {formatPetAge(pet, language)}</p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-teal-50 group-hover:text-teal-600 transition-colors">
+                    <Icons.ChevronLeft className="rotate-180 w-5 h-5" />
+                </div>
+                </div>
+            ))}
         </div>
 
+        {/* 4. 添加档案按钮 */}
         <button onClick={onAdd} className="w-full mt-8 py-6 rounded-3xl border-2 border-dashed border-slate-200 text-slate-400 hover:border-teal-300 hover:text-teal-600 hover:bg-teal-50/50 transition-all flex flex-col items-center justify-center gap-2 group">
             <div className="p-3 bg-slate-50 rounded-full group-hover:bg-white group-hover:shadow-sm transition-all">
                 <Icons.Plus className="w-6 h-6" />
             </div>
             <span className="font-semibold text-sm">{t('add_profile')}</span>
         </button>
+
+        {/* 5. 底部毛玻璃栏：放置退出按钮 */}
+        <div className="absolute bottom-0 left-0 right-0 p-6 bg-white/70 backdrop-blur-md border-t border-slate-200/50 flex justify-center items-center z-10">
+            <button 
+                onClick={onLogout}
+                className="flex items-center gap-2 px-6 py-3 rounded-full text-slate-500 hover:text-red-500 hover:bg-red-50 transition-all group"
+            >
+                <div className="p-1 rounded-full bg-slate-200 group-hover:bg-red-200 transition-colors">
+                    <Icons.LogOut className="w-4 h-4 text-slate-600 group-hover:text-red-600" />
+                </div>
+                <span className="text-sm font-bold tracking-wide">{t('logout') || "Sign Out"}</span>
+            </button>
+        </div>
     </div>
     );
 };
+// --- 结束复制 ---
 
 const AppContent: React.FC = () => {
+  // 1. 定义所有状态
+  const [user, setUser] = useState<any>(null);
   const [view, setView] = useState<'list' | 'detail' | 'create-pet' | 'edit-pet' | 'create-log' | 'create-expense' | 'create-memo' | 'edit-log' | 'edit-expense' | 'edit-memo'>('list');
   const [pets, setPets] = useState<Pet[]>([]);
   const [activePet, setActivePet] = useState<Pet | null>(null);
@@ -1819,13 +2018,26 @@ const AppContent: React.FC = () => {
   const [activeMemo, setActiveMemo] = useState<MemoEntry | null>(null);
   const [detailTab, setDetailTab] = useState<'overview' | 'logs' | 'expenses' | 'memos' | 'gallery'>('overview');
 
+  // 2. 初始化检查：应用加载时，检查本地缓存是否有已登录用户
   useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
+
+  // 3. 数据加载：只有在用户已登录 (user 存在) 时才加载宠物数据
+  useEffect(() => {
+    if (!user) return; // 如果未登录，不加载数据
+
     let isMounted = true;
     const loadPets = async () => {
       try {
         const data = await Storage.getPets();
         if (!isMounted) return;
         setPets(data);
+        
+        // 如果当前正在查看某个宠物，刷新它的数据
         if (activePet) {
           const updated = data.find(p => p.id === activePet.id);
           if (updated) {
@@ -1840,8 +2052,9 @@ const AppContent: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [view, activePet?.id]);
+  }, [view, activePet?.id, user]); // 依赖项中加入了 user，确保登录后自动刷新
 
+  // 4. 各种交互处理函数
   const handlePetSelect = (pet: Pet) => {
     setActivePet(pet);
     setDetailTab('overview');
@@ -1855,11 +2068,37 @@ const AppContent: React.FC = () => {
     setView(activePet ? 'detail' : 'list');
   };
 
+  const handleLogout = () => {
+    if (window.confirm("Are you sure you want to log out?")) {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      setUser(null);
+      setView('list');
+      setPets([]); // 清空数据
+    }
+  };
+
+  // 5. 权限拦截：如果没有用户，显示登录/注册页面
+  if (!user) {
+    return <AuthScreen onLoginSuccess={(u) => setUser(u)} />;
+  }
+
+  // 6. 主渲染逻辑
   return (
-    <div className="min-h-screen max-w-md mx-auto shadow-2xl shadow-slate-200/50 overflow-hidden bg-[#f8fafc] border-x border-slate-50 sm:my-8 sm:rounded-[40px]">
-      {view === 'list' && <PetList pets={pets} onSelect={handlePetSelect} onAdd={() => { setActivePet(null); setView('create-pet'); }} />}
+    <div className="min-h-screen max-w-md mx-auto shadow-2xl shadow-slate-200/50 overflow-hidden bg-[#f8fafc] border-x border-slate-50 sm:my-8 sm:rounded-[40px] relative">
+      {/* 视图路由逻辑 */}
+      {view === 'list' && (
+        <PetList 
+          pets={pets} 
+          onSelect={handlePetSelect} 
+          onAdd={() => { setActivePet(null); setView('create-pet'); }} 
+          onLogout={handleLogout} 
+        />
+      )}
       
-      {view === 'create-pet' && <PetForm onSave={() => setView('list')} onCancel={() => setView('list')} />}
+      {view === 'create-pet' && (
+        <PetForm onSave={() => setView('list')} onCancel={() => setView('list')} />
+      )}
       
       {view === 'edit-pet' && activePet && (
         <PetForm 

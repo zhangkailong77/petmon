@@ -2,7 +2,7 @@ from datetime import datetime
 
 from enum import Enum as PyEnum
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -25,6 +25,32 @@ class LogTypeEnum(str, PyEnum):
   NOTE = 'Note'
 
 
+class User(Base):
+    __tablename__ = 'users'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    nickname: Mapped[str | None] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # 关联宠物
+    pets: Mapped[list['Pet']] = relationship('Pet', back_populates='owner', cascade='all, delete-orphan')
+
+
+# 新增 验证码 模型
+class VerificationCode(Base):
+    __tablename__ = 'verification_codes'
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    code: Mapped[str] = mapped_column(String(6), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    is_used: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class Pet(Base):
   __tablename__ = 'pets'
 
@@ -37,6 +63,7 @@ class Pet(Base):
   weight: Mapped[float] = mapped_column(Numeric(5, 2), nullable=False)
   photo_url: Mapped[str | None] = mapped_column(Text)
   created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+  owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey('users.id'), nullable=True) # 暂时允许为空以兼容旧数据
 
   photos: Mapped[list['PetPhoto']] = relationship(
     'PetPhoto', back_populates='pet', cascade='all, delete-orphan', lazy='selectin'
@@ -50,6 +77,7 @@ class Pet(Base):
   memos: Mapped[list['PetMemo']] = relationship(
     'PetMemo', back_populates='pet', cascade='all, delete-orphan', lazy='selectin'
   )
+  owner: Mapped[User] = relationship('User', back_populates='pets')
 
 
 class PetPhoto(Base):
